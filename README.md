@@ -1,7 +1,3 @@
-# Shadcnblocks.com - Admin Kit
-
-A premium Shadcn admin dashboard by shadcnblocks.com
-
 ## Getting Started
 
 Install dependencies
