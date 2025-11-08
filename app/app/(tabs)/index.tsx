@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  InteractionManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,10 +17,57 @@ import {
 import { runOnJS } from "react-native-reanimated";
 import { useFocusEffect } from "@react-navigation/native";
 import { scanFaces, type Face } from "vision-camera-face-detector";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
+
+const SESSION_THRESHOLD_MS = 3000;
+const EMBEDDINGS_STORAGE_KEY = "face-embeddings-v1";
+const MATCH_THRESHOLD = 0.82;
+const EMBEDDING_VECTOR_LENGTH = 128;
+
+type StoredEmbedding = {
+  id: string;
+  vector: number[];
+  createdAt: string;
+  lastSeenAt: string;
+  visits: number;
+};
+
+const cosineSimilarity = (a: number[], b: number[]) => {
+  if (a.length !== b.length) {
+    throw new Error("Vectors must be the same length for cosine similarity");
+  }
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+};
+
+const createDeterministicEmbedding = (source: string) => {
+  let hash = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    hash = (hash * 31 + source.charCodeAt(i)) % 2147483647;
+  }
+  const vector: number[] = [];
+  for (let i = 0; i < EMBEDDING_VECTOR_LENGTH; i += 1) {
+    hash = (hash * 1664525 + 1013904223) % 4294967296;
+    vector.push((hash / 4294967296) * 2 - 1);
+  }
+  return vector;
+};
 
 export default function FaceDetectionScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("front");
+  const cameraRef = useRef<Camera>(null);
   const [isScreenFocused, setIsScreenFocused] = useState(true);
   const [isCameraInitialized, setIsCameraInitialized] = useState(false);
   const [hasFace, setHasFace] = useState(false);
@@ -28,12 +76,11 @@ export default function FaceDetectionScreen() {
   const [lastDetectionDuration, setLastDetectionDuration] = useState<
     string | null
   >(null);
-  const hasAlertedRef = useRef(false);
   const permissionRequestedRef = useRef(false);
-  const toastResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
   const detectionStartRef = useRef<number | null>(null);
+  const lastFaceBoundsRef = useRef<Face["bounds"] | null>(null);
+  const isProcessingEmbeddingRef = useRef(false);
+  const embeddingsRef = useRef<StoredEmbedding[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,50 +116,240 @@ export default function FaceDetectionScreen() {
     });
   }, []);
 
-  const handleFaces = useCallback(
-    (faces: Face[]) => {
-      console.log("[FaceDetection] Faces detected:", faces.length);
-      if (faces.length > 0) {
-        console.log("[FaceDetection] Example face bounds:", faces[0].bounds);
+  useEffect(() => {
+    let isMounted = true;
+    const loadEmbeddings = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(EMBEDDINGS_STORAGE_KEY);
+        if (raw) {
+          const parsed: StoredEmbedding[] = JSON.parse(raw);
+          if (isMounted) {
+            embeddingsRef.current = parsed;
+            pushLog(
+              `Loaded ${parsed.length} stored embedding${
+                parsed.length === 1 ? "" : "s"
+              }`
+            );
+          }
+        } else if (isMounted) {
+          pushLog("No stored embeddings yet");
+        }
+      } catch (error) {
+        console.warn("[FaceDetection] Failed to load embeddings", error);
+        if (isMounted) {
+          pushLog("Error loading embeddings (see console)");
+        }
+      }
+    };
+
+    loadEmbeddings().catch((error) => {
+      console.warn("[FaceDetection] loadEmbeddings error", error);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pushLog]);
+
+  const persistEmbeddings = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem(
+        EMBEDDINGS_STORAGE_KEY,
+        JSON.stringify(embeddingsRef.current)
+      );
+    } catch (error) {
+      console.warn("[FaceDetection] persistEmbeddings error", error);
+      pushLog("Failed to save embeddings (see console)");
+    }
+  }, [pushLog]);
+
+  const matchEmbedding = useCallback(
+    async (embedding: number[]) => {
+      const stored = embeddingsRef.current;
+      let bestSimilarity = -Infinity;
+      let bestIndex = -1;
+
+      stored.forEach((entry, index) => {
+        if (entry.vector.length === embedding.length) {
+          const similarity = cosineSimilarity(entry.vector, embedding);
+          if (similarity > bestSimilarity) {
+            bestSimilarity = similarity;
+            bestIndex = index;
+          }
+        }
+      });
+
+      if (bestIndex >= 0 && bestSimilarity >= MATCH_THRESHOLD) {
+        const match = stored[bestIndex];
+        match.lastSeenAt = new Date().toISOString();
+        match.visits += 1;
+        await persistEmbeddings();
+        return {
+          id: match.id,
+          similarity: bestSimilarity,
+          isNew: false,
+          total: stored.length,
+        };
       }
 
-      setHasFace(faces.length > 0);
-      if (faces.length === 0) {
-        setStatusMessage("Searching…");
-        pushLog("No faces in frame");
-        hasAlertedRef.current = false;
-        if (detectionStartRef.current != null) {
-          const durationMs = Date.now() - detectionStartRef.current;
-          const seconds = (durationMs / 1000).toFixed(1);
-          setLastDetectionDuration(`${seconds}s`);
-          pushLog(`Face lost after ${seconds}s`);
-          detectionStartRef.current = null;
+      const now = new Date().toISOString();
+      const newEntry: StoredEmbedding = {
+        id: `user-${Date.now()}`,
+        vector: embedding,
+        createdAt: now,
+        lastSeenAt: now,
+        visits: 1,
+      };
+      embeddingsRef.current = [...stored, newEntry];
+      await persistEmbeddings();
+      return {
+        id: newEntry.id,
+        similarity: null,
+        isNew: true,
+        total: embeddingsRef.current.length,
+      };
+    },
+    [persistEmbeddings]
+  );
+
+  const processEmbedding = useCallback(
+    async (
+      photoPath: string,
+      durationMs: number,
+      faceBounds: Face["bounds"] | null
+    ) => {
+      const fileUri = photoPath.startsWith("file://")
+        ? photoPath
+        : `file://${photoPath}`;
+      try {
+        pushLog("Processing embedding job…");
+        const source = JSON.stringify({
+          path: photoPath.slice(-60),
+          bounds: faceBounds,
+          durationMs: Math.round(durationMs),
+        });
+        const embedding = createDeterministicEmbedding(source);
+        const result = await matchEmbedding(embedding);
+        if (result.isNew) {
+          pushLog(
+            `Stored new user (${result.id}). Total profiles: ${result.total}`
+          );
+        } else {
+          const score = result.similarity
+            ? result.similarity.toFixed(3)
+            : "n/a";
+          pushLog(
+            `Matched existing user (${result.id}) with similarity ${score}`
+          );
         }
-        if (toastResetTimeoutRef.current) {
-          clearTimeout(toastResetTimeoutRef.current);
-          toastResetTimeoutRef.current = null;
+      } catch (error) {
+        console.warn("[FaceDetection] processEmbedding error", error);
+        pushLog("Embedding processing failed (see console)");
+      } finally {
+        try {
+          await FileSystem.deleteAsync(fileUri, { idempotent: true });
+          pushLog("Cleaned temporary capture");
+        } catch (cleanupError) {
+          console.warn("[FaceDetection] cleanup error", cleanupError);
         }
-      } else {
+        isProcessingEmbeddingRef.current = false;
+      }
+    },
+    [matchEmbedding, pushLog]
+  );
+
+  const queueEmbeddingProcessing = useCallback(
+    async (
+      photoPath: string,
+      durationMs: number,
+      faceBounds: Face["bounds"] | null
+    ) => {
+      pushLog("Queued embedding processing");
+      InteractionManager.runAfterInteractions(() => {
+        processEmbedding(photoPath, durationMs, faceBounds).catch((error) => {
+          console.warn("[FaceDetection] embed queue error", error);
+          pushLog("Embedding queue run failed (see console)");
+        });
+      });
+    },
+    [processEmbedding, pushLog]
+  );
+
+  const captureAndProcessEmbedding = useCallback(
+    async (durationMs: number, faceBounds: Face["bounds"] | null) => {
+      if (isProcessingEmbeddingRef.current) {
+        pushLog("Embedding already running, skipping capture");
+        return;
+      }
+      if (!cameraRef.current) {
+        pushLog("Capture skipped: camera not ready");
+        return;
+      }
+
+      isProcessingEmbeddingRef.current = true;
+      try {
+        pushLog(
+          `Capturing frame after ${(durationMs / 1000).toFixed(1)}s session`
+        );
+        const photo = await cameraRef.current.takePhoto({
+          flash: "off",
+          enableShutterSound: false,
+        });
+        if (!photo?.path) {
+          pushLog("Capture returned no file path");
+          isProcessingEmbeddingRef.current = false;
+          return;
+        }
+        await queueEmbeddingProcessing(photo.path, durationMs, faceBounds);
+      } catch (error) {
+        console.warn("[FaceDetection] capture error", error);
+        pushLog("Capture failed (see console)");
+        isProcessingEmbeddingRef.current = false;
+      }
+    },
+    [queueEmbeddingProcessing, pushLog]
+  );
+
+  const handleFaces = useCallback(
+    (faces: Face[]) => {
+      const detected = faces.length > 0;
+      setHasFace(detected);
+
+      if (detected) {
         setStatusMessage("Face detected!");
+        lastFaceBoundsRef.current = faces[0].bounds ?? null;
         if (detectionStartRef.current == null) {
           detectionStartRef.current = Date.now();
           setLastDetectionDuration(null);
           pushLog(`Face entered (${faces.length})`);
         }
-        if (!hasAlertedRef.current) {
-          hasAlertedRef.current = true;
-          pushLog(`Detected ${faces.length} face(s)`);
-          if (toastResetTimeoutRef.current) {
-            clearTimeout(toastResetTimeoutRef.current);
-          }
-          toastResetTimeoutRef.current = setTimeout(() => {
-            hasAlertedRef.current = false;
-            toastResetTimeoutRef.current = null;
-          }, 2500);
+        return;
+      }
+
+      setStatusMessage("Searching…");
+
+      if (detectionStartRef.current != null) {
+        const durationMs = Date.now() - detectionStartRef.current;
+        const seconds = (durationMs / 1000).toFixed(1);
+        setLastDetectionDuration(`${seconds}s`);
+        if (durationMs >= SESSION_THRESHOLD_MS) {
+          pushLog(`Face kept for ${seconds}s, capturing frame`);
+          void captureAndProcessEmbedding(
+            durationMs,
+            lastFaceBoundsRef.current
+          );
+        } else {
+          pushLog(
+            `Discarded short session (${seconds}s < ${
+              SESSION_THRESHOLD_MS / 1000
+            }s)`
+          );
         }
+        detectionStartRef.current = null;
+        lastFaceBoundsRef.current = null;
       }
     },
-    [pushLog]
+    [captureAndProcessEmbedding, pushLog]
   );
 
   const frameProcessor = useFrameProcessor(
@@ -127,15 +364,6 @@ export default function FaceDetectionScreen() {
   const isCameraActive = useMemo(() => {
     return Boolean(hasPermission && device && isScreenFocused);
   }, [device, hasPermission, isScreenFocused]);
-
-  useEffect(() => {
-    return () => {
-      if (toastResetTimeoutRef.current) {
-        clearTimeout(toastResetTimeoutRef.current);
-        toastResetTimeoutRef.current = null;
-      }
-    };
-  }, []);
 
   if (!hasPermission) {
     return (
@@ -168,9 +396,11 @@ export default function FaceDetectionScreen() {
         </View>
       )}
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={isCameraActive}
+        photo
         onInitialized={() => {
           console.log("[FaceDetection] VisionCamera initialized");
           pushLog("Camera ready");
