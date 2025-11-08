@@ -1,0 +1,13 @@
+Face-Embedding Flow Plan (≥3s Sessions Only)
+1. Detect face entry
+   - Use existing Vision Camera frame detector to flag when a face enters.
+   - Start session timer and store first stable bounds/frame reference.
+2. Gate by duration
+   - If the face leaves before 3 seconds, discard any captured data.
+   - If presence lasts ≥3s, keep the final frame URI/bounds for embedding.
+3. Async embedding work
+   - Off the UI thread, load the saved frame, align/crop using stored bounds, run through embedding model, delete image afterward.
+4. Matching & storage
+   - Compare the embedding against stored templates (cosine distance), log `matched` / `new user`, encrypt or store locally.
+5. Surface results
+   - Append status to the on-screen log panel (e.g., duration kept, match outcome) so behavior is visible during testing.
