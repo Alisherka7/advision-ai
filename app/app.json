@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Face Detection App to access the camera so it can detect faces."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +22,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA"
+      ],
+      "package": "com.fastians.facedetectionapp"
     },
     "web": {
       "output": "static",

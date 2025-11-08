@@ -1,98 +1,158 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as FaceDetector from 'expo-face-detector';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function FaceDetectionScreen() {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [isReady, setIsReady] = useState(false);
+  const [hasFace, setHasFace] = useState(false);
+  const hasAlertedRef = useRef(false);
 
-export default function HomeScreen() {
+  useEffect(() => {
+    if (permission?.granted) {
+      setIsReady(true);
+    }
+  }, [permission]);
+
+  useEffect(() => {
+    if (hasFace && !hasAlertedRef.current) {
+      hasAlertedRef.current = true;
+      Alert.alert('Face detected', 'We found a face in the camera view.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            hasAlertedRef.current = false;
+          },
+        },
+      ]);
+    }
+  }, [hasFace]);
+
+  const handleFacesDetected = ({ faces }: FaceDetector.FaceDetectionResult) => {
+    setHasFace(faces.length > 0);
+    if (faces.length === 0) {
+      hasAlertedRef.current = false;
+    }
+  };
+
+  if (!permission) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.message}>Checking camera permissions…</Text>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.centeredContainer}>
+        <Text style={styles.message}>We need camera access to detect faces.</Text>
+        <TouchableOpacity style={styles.button} onPress={requestPermission}>
+          <Text style={styles.buttonText}>Grant camera permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={styles.container}>
+      {!isReady && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Preparing camera…</Text>
+        </View>
+      )}
+      <CameraView
+        style={StyleSheet.absoluteFill}
+        facing="front"
+        onCameraReady={() => setIsReady(true)}
+        onFacesDetected={handleFacesDetected}
+        faceDetectorSettings={{
+          mode: FaceDetector.FaceDetectorMode.fast,
+          detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
+          runClassifications: FaceDetector.FaceDetectorClassifications.none,
+          minDetectionInterval: 500,
+          tracking: true,
+        }}
+      />
+      <View style={styles.overlay}>
+        <Text style={styles.overlayTitle}>Point the camera towards a face</Text>
+        <Text style={[styles.overlayStatus, hasFace ? styles.statusDetected : styles.statusSearching]}>
+          {hasFace ? 'Face detected!' : 'Searching…'}
+        </Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  stepContainer: {
-    gap: 8,
+  centeredContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#0b0b0b',
+  },
+  message: {
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: 16,
+    fontSize: 16,
+  },
+  button: {
+    marginTop: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 16,
+  },
+  overlay: {
+    position: 'absolute',
+    bottom: 60,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  overlayTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  overlayStatus: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  statusDetected: {
+    color: '#34d399',
+  },
+  statusSearching: {
+    color: '#fbbf24',
   },
 });
