@@ -89,12 +89,20 @@ export default function FaceDetectionScreen() {
         }}
         {...({
           onFacesDetected: handleFacesDetected,
+          onFaceDetectionError: (event: {
+            nativeEvent: { message: string };
+          }) => {
+            console.warn(
+              "[FaceDetection] Face detector error:",
+              event.nativeEvent.message
+            );
+          },
           faceDetectorEnabled: true,
           faceDetectorSettings: {
-            mode: FaceDetector.FaceDetectorMode.fast,
+            mode: FaceDetector.FaceDetectorMode.accurate,
             detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
             runClassifications: FaceDetector.FaceDetectorClassifications.none,
-            minDetectionInterval: 500,
+            minDetectionInterval: 200,
             tracking: true,
           },
         } as Record<string, unknown>)}

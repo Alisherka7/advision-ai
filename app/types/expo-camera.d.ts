@@ -14,5 +14,11 @@ declare module "expo-camera" {
      * Invoked when faces are detected in the camera preview.
      */
     onFacesDetected?: (result: DetectionResult) => void;
+    /**
+     * Invoked when the native face detector encounters an error.
+     */
+    onFaceDetectionError?: (event: {
+      nativeEvent: { message: string };
+    }) => void;
   }
 }
