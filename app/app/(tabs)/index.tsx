@@ -20,7 +20,6 @@ import { type Face } from "vision-camera-face-detector";
 import * as FileSystem from "expo-file-system";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __scanFaces:
     | ((frame: Frame) => Face[] | null | undefined)
     | undefined
@@ -39,7 +38,7 @@ const scanFacesFromFrame = (frame: Frame): Face[] | null => {
     return null;
   }
   // @ts-ignore
-  // eslint-disable-next-line no-undef
+
   return scanFacesWorklet(frame);
 };
 
