@@ -12,16 +12,36 @@ import {
   useCameraDevice,
   useCameraPermission,
   useFrameProcessor,
+  type Frame,
 } from "react-native-vision-camera";
 import { runOnJS } from "react-native-reanimated";
 import { useFocusEffect } from "@react-navigation/native";
-import { scanFaces, type Face } from "vision-camera-face-detector";
+import { type Face } from "vision-camera-face-detector";
 import * as FileSystem from "expo-file-system";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __scanFaces:
+    | ((frame: Frame) => Face[] | null | undefined)
+    | undefined
+    | null;
+}
 
 const API_ENDPOINT =
   process.env.EXPO_PUBLIC_VIEWER_ENDPOINT ??
   "https://virtually-corps-details-habits.trycloudflare.com/api/v1/viewer";
 const DETECTION_DURATION_THRESHOLD_MS = 3000;
+
+const scanFacesFromFrame = (frame: Frame): Face[] | null => {
+  "worklet";
+  const scanFacesWorklet = globalThis.__scanFaces;
+  if (typeof scanFacesWorklet !== "function") {
+    return null;
+  }
+  // @ts-ignore
+  // eslint-disable-next-line no-undef
+  return scanFacesWorklet(frame);
+};
 
 export default function FaceDetectionScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -43,6 +63,14 @@ export default function FaceDetectionScreen() {
   const cameraRef = useRef<Camera | null>(null);
   const hasSentRef = useRef(false);
   const isSendingRef = useRef(false);
+  const hasWarnedPluginUnavailableRef = useRef(false);
+  const isFrameProcessorSupportedRef = useRef(
+    typeof globalThis.__scanFaces === "function" &&
+      typeof globalThis.scheduleOnJS === "function"
+  );
+  const [isFrameProcessorSupported, setIsFrameProcessorSupported] = useState(
+    isFrameProcessorSupportedRef.current
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -65,6 +93,34 @@ export default function FaceDetectionScreen() {
   }, [hasPermission]);
 
   useEffect(() => {
+    const checkSupport = () => {
+      const supported =
+        typeof globalThis.__scanFaces === "function" &&
+        typeof globalThis.scheduleOnJS === "function";
+      if (supported !== isFrameProcessorSupportedRef.current) {
+        isFrameProcessorSupportedRef.current = supported;
+        setIsFrameProcessorSupported(supported);
+      }
+      return supported;
+    };
+    if (!checkSupport()) {
+      pushLog("Frame processor plugin not detected; running in fallback mode");
+    }
+    const intervalId = setInterval(() => {
+      if (checkSupport()) {
+        clearInterval(intervalId);
+      }
+    }, 2000);
+    return () => clearInterval(intervalId);
+  }, [pushLog]);
+
+  useEffect(() => {
+    if (!isFrameProcessorSupported) {
+      handlePluginUnavailable();
+    }
+  }, [handlePluginUnavailable, isFrameProcessorSupported]);
+
+  useEffect(() => {
     if (!hasPermission && !permissionRequestedRef.current) {
       permissionRequestedRef.current = true;
       void requestPermission();
@@ -77,6 +133,24 @@ export default function FaceDetectionScreen() {
       return [entry, ...current].slice(0, 6);
     });
   }, []);
+
+  const handlePluginUnavailable = useCallback(() => {
+    if (hasWarnedPluginUnavailableRef.current) {
+      return;
+    }
+    hasWarnedPluginUnavailableRef.current = true;
+    detectionStartRef.current = null;
+    hasSentRef.current = false;
+    hasAlertedRef.current = false;
+    if (toastResetTimeoutRef.current) {
+      clearTimeout(toastResetTimeoutRef.current);
+      toastResetTimeoutRef.current = null;
+    }
+    pushLog("Face detection plugin unavailable; skipping frame analysis");
+    setStatusMessage("Face detection unavailable");
+    setHasFace(false);
+    setLastDetectionDuration(null);
+  }, [pushLog]);
 
   const captureAndSend = useCallback(
     async (startTimestamp: number, endTimestamp: number) => {
@@ -228,10 +302,16 @@ export default function FaceDetectionScreen() {
   const frameProcessor = useFrameProcessor(
     (frame) => {
       "worklet";
-      const detectedFaces = scanFaces(frame);
+      if (!isFrameProcessorSupported) {
+        return;
+      }
+      const detectedFaces = scanFacesFromFrame(frame);
+      if (detectedFaces == null) {
+        return;
+      }
       runOnJS(handleFaces)(detectedFaces);
     },
-    [handleFaces]
+    [handleFaces, isFrameProcessorSupported]
   );
 
   const isCameraActive = useMemo(() => {
