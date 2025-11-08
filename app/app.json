@@ -11,8 +11,9 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow Face Detection App to access the camera so it can detect faces."
-      }
+        "NSCameraUsageDescription": "Allow Face Detection App to access the camera for real-time detection."
+      },
+      "bundleIdentifier": "com.fastians.facedetectionapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +24,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA"
+      ],
       "package": "com.fastians.facedetectionapp"
     },
     "web": {
