@@ -39,6 +39,34 @@ async def register_face(
     ext = ALLOWED[image.content_type]
     response = service.register(image_content, ext, user_id, org_id)
     return response
+  
+@router.post("/viewer", status_code=status.HTTP_201_CREATED)
+async def register_viewer(
+    image_base64: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    duration: float = Form(...),
+):
+    # Print the received dummy data
+    print("=" * 50)
+    print("Received Viewer Data:")
+    print(f"Image Base64 (first 50 chars): {image_base64[:50]}...")
+    print(f"Start Time: {start_time}")
+    print(f"End Time: {end_time}")
+    print(f"Duration: {duration}")
+    print("=" * 50)
+    
+    # Return success response with the received data
+    return {
+        "status": "success",
+        "message": "Viewer registered successfully",
+        "data": {
+            "image_base64": image_base64,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration": duration
+        }
+    }
 
 
 @router.post("/detect", status_code=status.HTTP_200_OK, response_model=FaceDetectResponse)

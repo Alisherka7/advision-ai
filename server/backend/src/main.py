@@ -30,6 +30,12 @@ app.include_router(
     tags=["users"]
 )
 
+# app.include_router(
+#     None,
+#     prefix=f"{settings.API_V1_PREFIX}/analytics",
+#     tags=["analytics"]
+# )
+
 app.include_router(
     worker_router,
     prefix=f"{settings.API_V1_PREFIX}/worker",

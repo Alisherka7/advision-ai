@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # 1. PostgreSQL Database
@@ -15,9 +15,9 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "max_connections=200"      # ✅ Allow 200 connections
+      - "max_connections=200"
       - "-c"
-      - "shared_buffers=256MB"     # ✅ Better performance
+      - "shared_buffers=256MB"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-face_auth_db}"]
       interval: 10s
@@ -118,7 +118,11 @@ services:
       - ./backend/src:/app/src
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v1/health\").read()'"]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c ''import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v1/health").read()''',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
