@@ -53,7 +53,7 @@ export default function Overview() {
         setIsLoading(true)
         setError(null)
 
-        const orgId = "test"
+        const orgId = "first"
         const startDate = "2025-11-03"
         const endDate = "2025-11-09"
 
@@ -139,10 +139,14 @@ export default function Overview() {
       </div>
       {/* <div className="grid auto-rows-auto grid-cols-3 gap-4 md:grid-cols-6 lg:grid-cols-9">
         <Stats analyticsData={analyticsData} />
-      </div> */}
+      </div>
+      <div className="w-full">
+        <RevenueChart dailyHistory={analyticsData.data.daily_history} />
+      </div>
+
       <div className="w-full">
         <Ads ranking={analyticsData.data.ranking} />
-      </div>
+      </div> */}
     </div>
   )
 }

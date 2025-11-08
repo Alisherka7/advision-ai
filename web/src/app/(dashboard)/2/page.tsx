@@ -1,4 +1,4 @@
-import {
+import { 
   IconSettings2,
 } from "@tabler/icons-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -24,11 +24,11 @@ export default async function Dashboard1Page() {
         >
           <div className="w-full overflow-x-auto pb-2">
             {/* <TabsList> */}
-            {/* <TabsTrigger value="overview" className="flex items-center gap-2">
+              {/* <TabsTrigger value="overview" className="flex items-center gap-2">
                 <IconSettings2 size={14} />
                 Overview
               </TabsTrigger> */}
-            {/* <TabsTrigger
+              {/* <TabsTrigger
                 value="analytics"
                 className="flex items-center gap-2"
               >

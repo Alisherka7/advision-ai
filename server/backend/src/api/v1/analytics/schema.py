@@ -27,9 +27,20 @@ class DailyHistoryItem(BaseModel):
     average_view_time: int = Field(..., description="Average view time in minutes")
 
 
+class RankingItem(BaseModel):
+    rank: int = Field(..., description="Ranking position based on unique viewers (top 1, 2, 3...)")
+    billboard_id: str = Field(..., description="Billboard identifier")
+    name: Optional[str] = Field(None, description="Billboard name")
+    location: Optional[str] = Field(None, description="Billboard location")
+    views: int = Field(..., description="Total number of views (detections)")
+    visit_by_view: float = Field(..., description="Ratio of unique visitors to total views")
+    viewing_duration: float = Field(..., description="Average viewing duration in minutes")
+
+
 class AnalyticsData(BaseModel):
     summary: SummaryData
     daily_history: List[DailyHistoryItem]
+    ranking: List[RankingItem] = Field(default_factory=list, description="Billboard rankings based on views")
 
 
 class AnalyticsResponse(BaseModel):
@@ -64,6 +75,17 @@ class AnalyticsResponse(BaseModel):
                         "viewers": 245,
                         "customers": 2,
                         "average_view_time": 28
+                    }
+                ],
+                "ranking": [
+                    {
+                        "rank": 1,
+                        "billboard_id": "billboard_gangnam",
+                        "name": "Billboard Gangnam",
+                        "location": "Gangnam Station",
+                        "views": 150,
+                        "visit_by_view": 0.75,
+                        "viewing_duration": 5.5
                     }
                 ]
             }

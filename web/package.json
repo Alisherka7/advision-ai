@@ -1,7 +1,7 @@
 {
-  "name": "shadcnblocks-admin",
+  "name": "advision",
   "version": "1.0.0",
-  "author": "Shadcnblocks.com",
+  "author": "alisherka0151@gmail.com",
   "private": true,
   "scripts": {
     "dev": "next dev",

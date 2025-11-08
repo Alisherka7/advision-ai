@@ -1,7 +1,7 @@
-import { 
-  IconChecklist, 
-  IconLayoutDashboard, 
-  IconSettings, 
+import {
+  IconChecklist,
+  IconLayoutDashboard,
+  IconSettings,
   IconUsers,
 } from "@tabler/icons-react"
 import { AudioWaveform, GalleryVerticalEnd } from "lucide-react"
@@ -12,7 +12,7 @@ import { type SidebarData } from "../types"
 export const sidebarData: SidebarData = {
   user: {
     name: "ausrobdev",
-    email: "rob@shadcnblocks.com",
+    email: "alisherka0151@gmail.com",
     avatar: "/avatars/ausrobdev-avatar.png",
   },
   teams: [
@@ -39,25 +39,25 @@ export const sidebarData: SidebarData = {
       title: "General",
       items: [
         {
-          title: "Dashboard",
+          title: "화장품 광고",
           icon: IconLayoutDashboard,
           items: [
             {
-              title: "Dashboard 1",
+              title: "역삼동",
               url: "/",
             },
             {
-              title: "Dashboard 2",
-              url: "/dashboard-2",
+              title: "강남",
+              url: "/1",
             },
             {
-              title: "Dashboard 3",
-              url: "/dashboard-3",
-            },
+              title: "중랑구",
+              url: "/2",
+            }
           ],
-        }, 
+        },
       ],
-    }, 
+    },
     {
       title: "Other",
       items: [

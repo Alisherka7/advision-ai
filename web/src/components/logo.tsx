@@ -2,8 +2,8 @@ import Image from "next/image"
 
 export function Logo({
   className = "",
-  width = 18,
-  height = 18,
+  width = 24,
+  height = 24,
 }: {
   className?: string
   width?: number
@@ -11,7 +11,7 @@ export function Logo({
 }) {
   return (
     <Image
-      src="/shadcnblocks-admin-logo.svg"
+      src="/coupang.png"
       width={width}
       height={height}
       className={className}

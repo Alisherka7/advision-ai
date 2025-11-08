@@ -552,6 +552,72 @@ class AdvertiseService:
                 
                 current_date += timedelta(days=1)
             
+            # 7. Billboard ranking based on unique viewers (top 1, 2, 3...)
+            ranking = []
+            
+            # Get billboard statistics for the period
+            billboard_stats = self.db.query(
+                Billboard.id,
+                Billboard.billboard_id,
+                Billboard.name,
+                Billboard.location,
+                func.count(Detection.id).label('views'),
+                func.count(distinct(Detection.face_id)).label('unique_visitors'),
+                func.avg(Detection.view_duration).label('avg_duration')
+            ).join(
+                Detection, Detection.billboard_id == Billboard.id
+            ).join(
+                Face, Detection.face_id == Face.id
+            ).join(
+                User, Face.user_id == User.id
+            ).filter(
+                and_(
+                    User.org_id == org_id,
+                    Detection.detected_at >= start_date,
+                    Detection.detected_at <= end_date
+                )
+            ).group_by(
+                Billboard.id,
+                Billboard.billboard_id,
+                Billboard.name,
+                Billboard.location
+            ).all()
+            
+            # Convert to list of dicts and calculate visit_by_view ratio
+            ranking_data = []
+            for stat in billboard_stats:
+                views = stat.views or 0
+                unique_visitors = stat.unique_visitors or 0
+                avg_duration_seconds = stat.avg_duration or 0
+                avg_duration_minutes = avg_duration_seconds / 60.0
+                
+                # Calculate visit_by_view ratio (unique visitors / total views)
+                visit_by_view = (unique_visitors / views) if views > 0 else 0.0
+                
+                ranking_data.append({
+                    'billboard_id': stat.billboard_id,
+                    'name': stat.name,
+                    'location': stat.location,
+                    'views': views,
+                    'unique_visitors': unique_visitors,
+                    'visit_by_view': round(visit_by_view, 2),
+                    'viewing_duration': round(avg_duration_minutes, 2)
+                })
+            
+            # Sort by unique_visitors (descending) to get top 1, 2, 3... ranking
+            ranking_data.sort(key=lambda x: x['unique_visitors'], reverse=True)
+            
+            for idx, item in enumerate(ranking_data, start=1):
+                ranking.append({
+                    'rank': idx,
+                    'billboard_id': item['billboard_id'],
+                    'name': item['name'],
+                    'location': item['location'],
+                    'views': item['views'],
+                    'visit_by_view': item['visit_by_view'],
+                    'viewing_duration': item['viewing_duration']
+                })
+            
             return {
                 'success': True,
                 'org_id': org_id,
@@ -570,7 +636,8 @@ class AdvertiseService:
                         'average_view_time': average_view_time,
                         'difference_average_view_time': difference_average_view_time
                     },
-                    'daily_history': daily_history
+                    'daily_history': daily_history,
+                    'ranking': ranking
                 }
             }
             
