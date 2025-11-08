@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -23,8 +23,13 @@ export default function FaceDetectionScreen() {
   const [isScreenFocused, setIsScreenFocused] = useState(true);
   const [isCameraInitialized, setIsCameraInitialized] = useState(false);
   const [hasFace, setHasFace] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Searching…");
+  const [logs, setLogs] = useState<string[]>([]);
   const hasAlertedRef = useRef(false);
   const permissionRequestedRef = useRef(false);
+  const toastResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -38,6 +43,12 @@ export default function FaceDetectionScreen() {
       "[FaceDetection] Camera permission status:",
       hasPermission ? "granted" : "not granted"
     );
+    setLogs((current) => [
+      `[${new Date().toLocaleTimeString()}] Permission: ${
+        hasPermission ? "granted" : "not granted"
+      }`,
+      ...current,
+    ]);
   }, [hasPermission]);
 
   useEffect(() => {
@@ -47,31 +58,45 @@ export default function FaceDetectionScreen() {
     }
   }, [hasPermission, requestPermission]);
 
-  useEffect(() => {
-    if (hasFace && !hasAlertedRef.current) {
-      hasAlertedRef.current = true;
-      Alert.alert("Face detected", "We found a face in the camera view.", [
-        {
-          text: "OK",
-          onPress: () => {
-            hasAlertedRef.current = false;
-          },
-        },
-      ]);
-    }
-  }, [hasFace]);
-
-  const handleFaces = useCallback((faces: Face[]) => {
-    console.log("[FaceDetection] Faces detected:", faces.length);
-    if (faces.length > 0) {
-      console.log("[FaceDetection] Example face bounds:", faces[0].bounds);
-    }
-
-    setHasFace(faces.length > 0);
-    if (faces.length === 0) {
-      hasAlertedRef.current = false;
-    }
+  const pushLog = useCallback((message: string) => {
+    setLogs((current) => {
+      const entry = `[${new Date().toLocaleTimeString()}] ${message}`;
+      return [entry, ...current].slice(0, 6);
+    });
   }, []);
+
+  const handleFaces = useCallback(
+    (faces: Face[]) => {
+      console.log("[FaceDetection] Faces detected:", faces.length);
+      if (faces.length > 0) {
+        console.log("[FaceDetection] Example face bounds:", faces[0].bounds);
+      }
+
+      setHasFace(faces.length > 0);
+      if (faces.length === 0) {
+        setStatusMessage("Searching…");
+        pushLog("No faces in frame");
+        hasAlertedRef.current = false;
+        if (toastResetTimeoutRef.current) {
+          clearTimeout(toastResetTimeoutRef.current);
+          toastResetTimeoutRef.current = null;
+        }
+      } else if (!hasAlertedRef.current) {
+        hasAlertedRef.current = true;
+        setStatusMessage("Face detected!");
+        pushLog(`Detected ${faces.length} face(s)`);
+        if (toastResetTimeoutRef.current) {
+          clearTimeout(toastResetTimeoutRef.current);
+        }
+        toastResetTimeoutRef.current = setTimeout(() => {
+          hasAlertedRef.current = false;
+          setStatusMessage("Searching…");
+          toastResetTimeoutRef.current = null;
+        }, 2500);
+      }
+    },
+    [pushLog]
+  );
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -85,6 +110,15 @@ export default function FaceDetectionScreen() {
   const isCameraActive = useMemo(() => {
     return Boolean(hasPermission && device && isScreenFocused);
   }, [device, hasPermission, isScreenFocused]);
+
+  useEffect(() => {
+    return () => {
+      if (toastResetTimeoutRef.current) {
+        clearTimeout(toastResetTimeoutRef.current);
+        toastResetTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   if (!hasPermission) {
     return (
@@ -122,10 +156,29 @@ export default function FaceDetectionScreen() {
         isActive={isCameraActive}
         onInitialized={() => {
           console.log("[FaceDetection] VisionCamera initialized");
+          pushLog("Camera ready");
+          setStatusMessage("Searching…");
           setIsCameraInitialized(true);
         }}
         frameProcessor={frameProcessor}
       />
+      <View style={styles.logPanel}>
+        <Text style={styles.logTitle}>Live Logs</Text>
+        <ScrollView
+          style={styles.logScroll}
+          contentContainerStyle={styles.logContent}
+        >
+          {logs.length === 0 ? (
+            <Text style={styles.logEmpty}>Waiting for events…</Text>
+          ) : (
+            logs.map((log, index) => (
+              <Text style={styles.logEntry} key={index}>
+                {log}
+              </Text>
+            ))
+          )}
+        </ScrollView>
+      </View>
       <View style={styles.overlay}>
         <Text style={styles.overlayTitle}>Point the camera towards a face</Text>
         <Text
@@ -134,7 +187,7 @@ export default function FaceDetectionScreen() {
             hasFace ? styles.statusDetected : styles.statusSearching,
           ]}
         >
-          {hasFace ? "Face detected!" : "Searching…"}
+          {statusMessage}
         </Text>
       </View>
     </View>
@@ -208,5 +261,39 @@ const styles = StyleSheet.create({
   },
   statusSearching: {
     color: "#fbbf24",
+  },
+  logPanel: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    right: 20,
+    maxHeight: 160,
+    backgroundColor: "rgba(17, 24, 39, 0.85)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.35)",
+  },
+  logTitle: {
+    color: "#93c5fd",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  logScroll: {
+    maxHeight: 110,
+  },
+  logContent: {
+    gap: 4,
+  },
+  logEntry: {
+    color: "#e5e7eb",
+    fontSize: 12,
+  },
+  logEmpty: {
+    color: "#9ca3af",
+    fontSize: 12,
+    fontStyle: "italic",
   },
 });
