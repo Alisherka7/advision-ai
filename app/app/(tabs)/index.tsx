@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,23 +7,82 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as FaceDetector from "expo-face-detector";
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  useFrameProcessor,
+} from "react-native-vision-camera";
+import { Worklets } from "react-native-worklets-core";
+import { useFaceDetector, type Face } from "react-native-vision-camera-face-detector";
 
 export default function FaceDetectionScreen() {
-  const [permission, requestPermission] = useCameraPermissions();
+  const { hasPermission, requestPermission, status } = useCameraPermission();
+  const device = useCameraDevice("front");
   const [isReady, setIsReady] = useState(false);
   const [hasFace, setHasFace] = useState(false);
   const hasAlertedRef = useRef(false);
+  const faceDetectorOptions = useMemo(
+    () => ({
+      performanceMode: "accurate" as const,
+      classificationMode: "all" as const,
+      contourMode: "all" as const,
+      trackingEnabled: true,
+      cameraFacing: device?.position ?? "front",
+    }),
+    [device?.position]
+  );
+  const faceDetector = useFaceDetector(faceDetectorOptions);
 
   useEffect(() => {
-    if (permission) {
+    if (status) {
       console.log(
         "[FaceDetection] Camera permission status:",
-        permission.status
+        status
       );
     }
-  }, [permission]);
+  }, [status]);
+
+  const runOnFacesDetected = useMemo(
+    () =>
+      Worklets.createRunOnJS((faces: Face[]) => {
+        console.log("[FaceDetection] Faces detected:", faces.length);
+        if (faces.length > 0) {
+          const [{ bounds }] = faces;
+          console.log("[FaceDetection] Example face bounds:", bounds);
+        }
+
+        setHasFace((prev) => {
+          const nextHasFace = faces.length > 0;
+          if (nextHasFace !== prev && !nextHasFace) {
+            hasAlertedRef.current = false;
+          }
+          return nextHasFace;
+        });
+      }),
+    []
+  );
+
+  const frameProcessor = useFrameProcessor(
+    (frame) => {
+      "worklet";
+      const faces = faceDetector.detectFaces(frame);
+      runOnFacesDetected(faces);
+    },
+    [faceDetector, runOnFacesDetected]
+  );
+
+  useEffect(() => {
+    return () => {
+      faceDetector.stopListeners();
+    };
+  }, [faceDetector]);
+
+  useEffect(() => {
+    if (!device) {
+      faceDetector.stopListeners();
+    }
+  }, [device, faceDetector]);
 
   useEffect(() => {
     if (hasFace && !hasAlertedRef.current) {
@@ -39,18 +98,7 @@ export default function FaceDetectionScreen() {
     }
   }, [hasFace]);
 
-  const handleFacesDetected = ({ faces }: FaceDetector.DetectionResult) => {
-    console.log("[FaceDetection] Faces detected:", faces.length);
-    if (faces.length > 0) {
-      console.log("[FaceDetection] Example face bounds:", faces[0].bounds);
-    }
-    setHasFace(faces.length > 0);
-    if (faces.length === 0) {
-      hasAlertedRef.current = false;
-    }
-  };
-
-  if (!permission) {
+  if (hasPermission == null) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" />
@@ -59,7 +107,7 @@ export default function FaceDetectionScreen() {
     );
   }
 
-  if (!permission.granted) {
+  if (!hasPermission) {
     return (
       <View style={styles.centeredContainer}>
         <Text style={styles.message}>
@@ -72,6 +120,17 @@ export default function FaceDetectionScreen() {
     );
   }
 
+  if (!device) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.message}>
+          Looking for a compatible front camera…
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {!isReady && (
@@ -80,32 +139,16 @@ export default function FaceDetectionScreen() {
           <Text style={styles.loadingText}>Preparing camera…</Text>
         </View>
       )}
-      <CameraView
+      <Camera
         style={StyleSheet.absoluteFill}
-        facing="front"
-        onCameraReady={() => {
+        device={device}
+        isActive
+        frameProcessor={frameProcessor}
+        frameProcessorFps={5}
+        onInitialized={() => {
           console.log("[FaceDetection] Camera ready");
           setIsReady(true);
         }}
-        {...({
-          onFacesDetected: handleFacesDetected,
-          onFaceDetectionError: (event: {
-            nativeEvent: { message: string };
-          }) => {
-            console.warn(
-              "[FaceDetection] Face detector error:",
-              event.nativeEvent.message
-            );
-          },
-          faceDetectorEnabled: true,
-          faceDetectorSettings: {
-            mode: FaceDetector.FaceDetectorMode.accurate,
-            detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
-            runClassifications: FaceDetector.FaceDetectorClassifications.none,
-            minDetectionInterval: 200,
-            tracking: true,
-          },
-        } as Record<string, unknown>)}
       />
       <View style={styles.overlay}>
         <Text style={styles.overlayTitle}>Point the camera towards a face</Text>
