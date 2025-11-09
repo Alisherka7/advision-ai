@@ -4,9 +4,8 @@ import {
   IconReportMoney,
   IconUserFilled,
 } from "@tabler/icons-react"
-import { RecentActivityStatus } from "./schema"
 
-export const recentActivityStatus = new Map<RecentActivityStatus, string>([
+export const recentActivityStatus = new Map<any, string>([
   [
     "Delete",
     "bg-destructive/10 border-destructive/30 text-destructive dark:bg-destructive/50 dark:text-foreground dark:border-destructive",
