@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -31,7 +30,6 @@ export default function FaceDetectionScreen() {
   const [uploadStatus, setUploadStatus] = useState<
     "idle" | "success" | "error"
   >("idle");
-  const hasAlertedRef = useRef(false);
   const detectionStartRef = useRef<number | null>(null);
   const detectionStartTimeRef = useRef<string | null>(null);
   const uploadTriggeredRef = useRef(false);
@@ -58,9 +56,6 @@ export default function FaceDetectionScreen() {
 
         setHasFace((prev) => {
           const nextHasFace = faces.length > 0;
-          if (nextHasFace !== prev && !nextHasFace) {
-            hasAlertedRef.current = false;
-          }
           if (nextHasFace) {
             const now = Date.now();
             if (detectionStartRef.current == null) {
@@ -181,20 +176,6 @@ export default function FaceDetectionScreen() {
       captureAndSendSnapshot();
     }
   }, [captureAndSendSnapshot, detectionDurationMs, hasFace]);
-
-  useEffect(() => {
-    if (hasFace && !hasAlertedRef.current) {
-      hasAlertedRef.current = true;
-      Alert.alert("Face detected", "We found a face in the camera view.", [
-        {
-          text: "OK",
-          onPress: () => {
-            hasAlertedRef.current = false;
-          },
-        },
-      ]);
-    }
-  }, [hasFace]);
 
   if (hasPermission == null) {
     return (
