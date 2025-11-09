@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,14 +14,27 @@ import {
   useFrameProcessor,
 } from "react-native-vision-camera";
 import { Worklets } from "react-native-worklets-core";
-import { useFaceDetector, type Face } from "react-native-vision-camera-face-detector";
+import {
+  useFaceDetector,
+  type Face,
+} from "react-native-vision-camera-face-detector";
+import * as FileSystem from "expo-file-system/legacy";
 
 export default function FaceDetectionScreen() {
-  const { hasPermission, requestPermission, status } = useCameraPermission();
+  const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("front");
+  const cameraRef = useRef<Camera | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [hasFace, setHasFace] = useState(false);
+  const [detectionDurationMs, setDetectionDurationMs] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
   const hasAlertedRef = useRef(false);
+  const detectionStartRef = useRef<number | null>(null);
+  const detectionStartTimeRef = useRef<string | null>(null);
+  const uploadTriggeredRef = useRef(false);
   const faceDetectorOptions = useMemo(
     () => ({
       performanceMode: "accurate" as const,
@@ -33,15 +46,6 @@ export default function FaceDetectionScreen() {
     [device?.position]
   );
   const faceDetector = useFaceDetector(faceDetectorOptions);
-
-  useEffect(() => {
-    if (status) {
-      console.log(
-        "[FaceDetection] Camera permission status:",
-        status
-      );
-    }
-  }, [status]);
 
   const runOnFacesDetected = useMemo(
     () =>
@@ -56,6 +60,24 @@ export default function FaceDetectionScreen() {
           const nextHasFace = faces.length > 0;
           if (nextHasFace !== prev && !nextHasFace) {
             hasAlertedRef.current = false;
+          }
+          if (nextHasFace) {
+            const now = Date.now();
+            if (detectionStartRef.current == null) {
+              detectionStartRef.current = now;
+              detectionStartTimeRef.current = new Date(now).toISOString();
+              uploadTriggeredRef.current = false;
+              setUploadStatus("idle");
+              setIsUploading(false);
+            }
+            setDetectionDurationMs(now - detectionStartRef.current);
+          } else {
+            detectionStartRef.current = null;
+            detectionStartTimeRef.current = null;
+            uploadTriggeredRef.current = false;
+            setUploadStatus("idle");
+            setIsUploading(false);
+            setDetectionDurationMs(0);
           }
           return nextHasFace;
         });
@@ -83,6 +105,82 @@ export default function FaceDetectionScreen() {
       faceDetector.stopListeners();
     }
   }, [device, faceDetector]);
+
+  const captureAndSendSnapshot = useCallback(async () => {
+    if (!cameraRef.current || !detectionStartTimeRef.current) {
+      return;
+    }
+    let snapshotUri: string | null = null;
+    try {
+      setIsUploading(true);
+      const snapshot = await cameraRef.current.takeSnapshot({
+        quality: 85,
+      });
+
+      snapshotUri = snapshot.path.startsWith("file://")
+        ? snapshot.path
+        : `file://${snapshot.path}`;
+
+      const imageBase64 = await FileSystem.readAsStringAsync(snapshotUri, {
+        encoding: "base64",
+      });
+
+      const startTime = detectionStartTimeRef.current;
+      const endTime = new Date();
+      const durationSeconds = Math.max(
+        3,
+        Math.round(detectionDurationMs / 1000)
+      );
+
+      const response = await fetch("http://14.138.145.45:8000/api/v1/viewer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image_base64: imageBase64,
+          start_time: startTime,
+          end_time: endTime.toISOString(),
+          duration: durationSeconds,
+          org_id: "default_org",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Viewer API status ${response.status}`);
+      }
+
+      setUploadStatus("success");
+    } catch (error) {
+      console.error("[FaceDetection] Failed to upload viewer payload", error);
+      uploadTriggeredRef.current = false;
+      setUploadStatus("error");
+    } finally {
+      setIsUploading(false);
+      if (snapshotUri) {
+        try {
+          await FileSystem.deleteAsync(snapshotUri, { idempotent: true });
+        } catch (cleanupError) {
+          console.warn(
+            "[FaceDetection] Failed to cleanup snapshot file",
+            cleanupError
+          );
+        }
+      }
+    }
+  }, [detectionDurationMs]);
+
+  useEffect(() => {
+    const FACE_HOLD_THRESHOLD_MS = 3000;
+    if (
+      hasFace &&
+      detectionDurationMs >= FACE_HOLD_THRESHOLD_MS &&
+      !uploadTriggeredRef.current
+    ) {
+      uploadTriggeredRef.current = true;
+      captureAndSendSnapshot();
+    }
+  }, [captureAndSendSnapshot, detectionDurationMs, hasFace]);
 
   useEffect(() => {
     if (hasFace && !hasAlertedRef.current) {
@@ -140,11 +238,12 @@ export default function FaceDetectionScreen() {
         </View>
       )}
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
         isActive
+        photo
         frameProcessor={frameProcessor}
-        frameProcessorFps={5}
         onInitialized={() => {
           console.log("[FaceDetection] Camera ready");
           setIsReady(true);
@@ -158,8 +257,21 @@ export default function FaceDetectionScreen() {
             hasFace ? styles.statusDetected : styles.statusSearching,
           ]}
         >
-          {hasFace ? "Face detected!" : "Searching…"}
+          {hasFace
+            ? `Face detected for ${(detectionDurationMs / 1000).toFixed(1)}s`
+            : "Searching…"}
         </Text>
+        {hasFace && (
+          <Text style={styles.overlaySubStatus}>
+            {isUploading
+              ? "Uploading snapshot…"
+              : uploadStatus === "success"
+              ? "Snapshot sent"
+              : uploadStatus === "error"
+              ? "Upload failed – hold steady to retry"
+              : "Hold steady for 3 seconds to capture"}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -226,6 +338,11 @@ const styles = StyleSheet.create({
   overlayStatus: {
     fontSize: 24,
     fontWeight: "700",
+  },
+  overlaySubStatus: {
+    marginTop: 8,
+    color: "#e5e7eb",
+    fontSize: 16,
   },
   statusDetected: {
     color: "#34d399",
