@@ -53,7 +53,7 @@ export default function Overview() {
         setIsLoading(true)
         setError(null)
 
-        const orgId = "test"
+        const orgId = "default_org"
         const startDate = "2025-11-03"
         const endDate = "2025-11-09"
 
