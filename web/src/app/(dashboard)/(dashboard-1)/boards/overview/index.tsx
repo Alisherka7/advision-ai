@@ -58,7 +58,7 @@ export default function Overview() {
         const endDate = "2025-11-09"
 
         // Use environment variable or fallback to localhost
-        const apiBaseUrl = "https://dev.alidev.net"
+        const apiBaseUrl = "https://advisionapi.solutionaix.com"
         const url = `${apiBaseUrl}/api/v1/analytics/?org_id=${orgId}&start_date=${startDate}&end_date=${endDate}`
 
         console.log("Fetching analytics from:", url)
