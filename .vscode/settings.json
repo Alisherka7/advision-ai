@@ -14,5 +14,8 @@
   },
   "search.exclude": {
     "package-lock.json": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
   }
 }
