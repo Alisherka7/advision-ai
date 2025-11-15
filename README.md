@@ -68,5 +68,3 @@ When a viewer visits a partner store, their anonymized token is matched automati
 <img width="1718" height="748" alt="Screenshot 2025-11-11 at 9 56 53 AM" src="https://github.com/user-attachments/assets/93e08469-cab3-464b-aa4b-63b13c3c53a2" />
 
 
-
-© 2025 AdVision AI. All rights reserved.
